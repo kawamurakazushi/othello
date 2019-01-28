@@ -9,6 +9,7 @@
     "parcel-bundler": "^1.11.0"
   },
   "scripts": {
-    "start": "parcel src/index.html"
+    "start": "parcel src/index.html",
+    "pages": "parcel build src/index.html --out-dir docs/ --public-url ."
   }
 }
