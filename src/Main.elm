@@ -1,4 +1,4 @@
-module Main exposing (Board, Model, Msg(..), Stone(..), andThen, board, check, init, main, set, stone, update, view)
+module Main exposing (Board, Model, Msg(..), Stone(..), board, check, init, main, set, stone, update, view)
 
 import Array as A exposing (Array)
 import Browser
@@ -39,9 +39,30 @@ type alias Model =
     }
 
 
+type alias Point =
+    ( Int, Int )
+
+
+getPoint : Point -> Board -> Maybe Stone
+getPoint ( col, row ) b =
+    A.get row b
+        |> Maybe.withDefault ([] |> A.fromList)
+        |> A.get col
+        |> Maybe.withDefault Nothing
+
+
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { board = A.repeat 8 (A.repeat 8 Nothing), player = Black }, Cmd.none )
+    ( { board =
+            A.repeat 8 (A.repeat 8 Nothing)
+                |> set White ( 3, 3 )
+                |> set White ( 4, 4 )
+                |> set Black ( 4, 3 )
+                |> set Black ( 3, 4 )
+      , player = Black
+      }
+    , Cmd.none
+    )
 
 
 
@@ -51,24 +72,22 @@ init _ =
 
 
 type Msg
-    = Start
-    | Set Stone ( Int, Int )
+    = Set Stone Point
 
 
 
 -- ---------------------------
 -- UPDATE
 -- ---------------------------
--- TODO: Ask kevin about where to put the board params
 
 
-set : Stone -> ( Int, Int ) -> Board -> Board
+set : Stone -> Point -> Board -> Board
 set s ( x, y ) b =
     A.indexedMap
-        (\i row ->
+        (\rowIndex row ->
             A.indexedMap
-                (\j col ->
-                    if i == x && j == y then
+                (\colIndex col ->
+                    if rowIndex == y && colIndex == x then
                         Just s
 
                     else
@@ -79,120 +98,119 @@ set s ( x, y ) b =
         b
 
 
-
--- (x-1, y)
--- (x-1, y-1)
--- (x-1, y+1)
--- (x+1, y)
--- (x+1, y-1)
--- (x+1, y+1)
--- (x, y-1)
--- (x, y+1)
--- case list of
---         [] -> []
---         (x::xs) -> x :: take (n-1) xs
+type alias Direction =
+    ( Int, Int )
 
 
-checkDirection2 : Board -> Stone -> ( Int, Int ) -> ( Int, Int ) -> Bool -> Bool
-checkDirection2 b s ( x, y ) ( i, j ) res =
+checkDirection : Board -> Stone -> Point -> Direction -> Int -> Bool -> Bool
+checkDirection b s ( col, row ) ( i, j ) nth res =
     let
-        booo =
-            Debug.log "board" b
-
-        a =
-            Debug.log "x" x
-
-        c =
-            Debug.log "y" y
-
-        i2 =
-            Debug.log "i" i
-
-        j2 =
-            Debug.log "j" j
-
-        pointB =
-            Debug.log "hi"
-                (A.get x b
-                    |> Maybe.withDefault ([] |> A.fromList)
-                )
-
         point =
-            Debug.log "hi22"
-                (pointB
-                    |> A.get y
-                    |> Maybe.withDefault Nothing
-                )
+            b |> getPoint ( col, row )
     in
     if Nothing == point then
+        False
+
+    else if (res && point == Just s) || (nth == 0 && point == Just s) then
         res
 
     else
-        checkDirection2 b s ( x + i, x + j ) ( i, j ) (point == Just (opposite s))
+        checkDirection b s ( col + i, row + j ) ( i, j ) (nth + 1) (point == Just (opposite s))
 
 
-checkDirection : Board -> Stone -> ( Int, Int ) -> ( Int, Int ) -> Bool
-checkDirection b s ( x, y ) ( i, j ) =
-    let
-        yo =
-            A.foldl
-                (\val acc ->
-                    let
-                        point =
-                            A.get (x + (i * val)) b
-                                |> Maybe.withDefault ([] |> A.fromList)
-                                |> A.get (y + (j * val))
-                                |> Maybe.withDefault Nothing
-                    in
-                    acc || (val /= 0 && point == Just (opposite s)) || (val == 0 && point == Nothing)
-                )
-                True
-                (A.initialize 8 identity)
-    in
-    True
-
-
-check : Board -> Stone -> ( Int, Int ) -> Bool
+check : Board -> Stone -> Point -> Bool
 check b s ( x, y ) =
     let
-        -- a =
-        --     L.map (\i -> L.map (\j -> checkDirection2 b s ( x, y ) ( i, j ) False) (L.range -1 1)) (L.range -1 1)
-        a =
-            checkDirection2 b s ( x, y ) ( -1, 0 ) False
+        directions =
+            L.range -1 1
+                |> L.map
+                    (\i ->
+                        L.range -1 1
+                            |> L.map
+                                (\j ->
+                                    if i == 0 && j == 0 then
+                                        Nothing
+
+                                    else
+                                        Just ( i, j )
+                                )
+                    )
+                |> L.concat
+                |> L.filter (\d -> d /= Nothing)
+                |> L.map (Maybe.withDefault ( 0, 0 ))
+
+        -- TODO: Ask kevin
     in
-    a
+    if (b |> getPoint ( x, y )) == Nothing then
+        directions
+            |> L.map
+                (\( i, j ) -> checkDirection b s ( x + i, y + j ) ( i, j ) 0 False)
+            |> L.foldl (\val acc -> val || acc) False
+
+    else
+        False
 
 
-andThen : Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
-andThen msg ( model, cmd ) =
+turnDirection : Board -> Stone -> Point -> Direction -> Board
+turnDirection b s ( col, row ) ( i, j ) =
     let
-        ( newmodel, newcmd ) =
-            update msg model
+        point =
+            b |> getPoint ( col, row )
     in
-    ( newmodel, Cmd.batch [ cmd, newcmd ] )
+    if point == Nothing || point == Just s then
+        b
+
+    else
+        turnDirection (b |> set s ( col, row )) s ( col + i, row + j ) ( i, j )
+
+
+turn : Stone -> Point -> Board -> Board
+turn s ( x, y ) b =
+    let
+        directions =
+            L.range -1 1
+                |> L.map
+                    (\i ->
+                        L.range -1 1
+                            |> L.map
+                                (\j ->
+                                    if i == 0 && j == 0 then
+                                        Nothing
+
+                                    else
+                                        Just ( i, j )
+                                )
+                    )
+                |> L.concat
+                |> L.filter (\d -> d /= Nothing)
+                |> L.map (Maybe.withDefault ( 0, 0 ))
+    in
+    directions
+        |> L.foldl
+            (\( i, j ) acc ->
+                if checkDirection b s ( x + i, y + j ) ( i, j ) 0 False then
+                    turnDirection acc s ( x + i, y + j ) ( i, j )
+
+                else
+                    acc
+            )
+            b
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Start ->
-            update (Set White ( 3, 3 )) model
-                |> andThen (Set White ( 4, 4 ))
-                |> andThen (Set Black ( 4, 3 ))
-                |> andThen (Set Black ( 3, 4 ))
-                |> andThen (Set Black ( 5, 4 ))
-
         Set s point ->
-            let
-                swap =
-                    case model.player of
-                        Black ->
-                            White
+            if check model.board model.player point then
+                ( { model
+                    | board = model.board |> set model.player point |> turn model.player point
+                    , player = opposite model.player
+                  }
+                , Cmd.none
+                )
 
-                        White ->
-                            Black
-            in
-            ( { model | board = model.board |> set s point, player = swap }, Cmd.none )
+            else
+                ( model, Cmd.none )
 
 
 
@@ -205,7 +223,7 @@ stone : Maybe Stone -> Html Msg
 stone s =
     case s of
         Nothing ->
-            div [] [ text "-" ]
+            div [] [ text "" ]
 
         Just Black ->
             div [ class "w-full m-2 bg-black rounded-full" ] []
@@ -218,13 +236,13 @@ board : Board -> Stone -> Html Msg
 board b player =
     div [ class "flex flex-col items-center" ]
         (A.indexedMap
-            (\i row ->
+            (\rowIndex row ->
                 div [ class "flex" ]
                     (A.indexedMap
-                        (\j s ->
+                        (\colIndex s ->
                             div
                                 [ class "flex w-16 h-16 bg-green-dark border border-black text-white cursor-pointer flex hover:bg-green"
-                                , onClick (Set player ( i, j ))
+                                , onClick (Set player ( colIndex, rowIndex ))
                                 ]
                                 [ stone s ]
                         )
@@ -240,8 +258,8 @@ board b player =
 view : Model -> Html Msg
 view model =
     div []
-        [ h1 [] [ text "Othello" ]
-        , div []
+        [ h1 [ class "flex justify-center" ] [ text "Othello" ]
+        , div [ class "flex justfy-center my-2" ]
             [ text
                 (case model.player of
                     Black ->
@@ -252,7 +270,6 @@ view model =
                 )
             ]
         , board model.board model.player
-        , button [ onClick Start ] [ text "start" ]
         ]
 
 
