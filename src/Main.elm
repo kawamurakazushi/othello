@@ -136,10 +136,9 @@ check b s ( x, y ) =
                                 )
                     )
                 |> L.concat
-                |> L.filter (\d -> d /= Nothing)
-                |> L.map (Maybe.withDefault ( 0, 0 ))
+                |> L.filterMap identity
 
-        -- TODO: Ask kevin
+        -- TODO: Maybe using foldl is better?
     in
     if (b |> getPoint ( x, y )) == Nothing then
         directions
@@ -182,8 +181,7 @@ turn s ( x, y ) b =
                                 )
                     )
                 |> L.concat
-                |> L.filter (\d -> d /= Nothing)
-                |> L.map (Maybe.withDefault ( 0, 0 ))
+                |> L.filterMap identity
     in
     directions
         |> L.foldl
